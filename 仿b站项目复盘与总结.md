@@ -725,7 +725,7 @@ CREATE TABLE `t_user_moments` (
 
 #### 订阅发布模式
 
-![image-20230225160054927](https://raw.githubusercontent.com/PeiyuChen1213/JAVA_Learning_Note/master/img/image-20230225160054927.png)
+
 
 1. 发布者将消息推送给代理人
 2. 代理人告诉所有的订阅者
@@ -1006,7 +1006,7 @@ getUserSubscribedMoments()方法
 
 角色表、用户角色关联表、元素操作权限表、角色元素操作权限关联表、页面菜单权限表、角色页面菜单权限关联表
 
-![image-20230225211213361-1677480184230-2](./%E4%BB%BFb%E7%AB%99%E9%A1%B9%E7%9B%AE%E5%A4%8D%E7%9B%98%E4%B8%8E%E6%80%BB%E7%BB%93.assets/image-20230225211213361-1677480184230-2-1677488880756-2-1677489974134-8.png)
+![image-20230225211213361](https://raw.githubusercontent.com/PeiyuChen1213/JAVA_Learning_Note/master/img/image-20230225211213361.png)
 
 #### 开发准备
 
@@ -1241,7 +1241,9 @@ public void addUser(User user) {
 
 *流程图*
 
-![image-20230227170622739](./%E4%BB%BFb%E7%AB%99%E9%A1%B9%E7%9B%AE%E5%A4%8D%E7%9B%98%E4%B8%8E%E6%80%BB%E7%BB%93.assets/image-20230227170622739-1677488880757-3-1677489974134-9.png)
+![image-20230225211213361-1677480184230-2](https://raw.githubusercontent.com/PeiyuChen1213/JAVA_Learning_Note/master/img/image-20230227170622739-1677488880757-3-1677489974134-9-1677492151172-2.png)
+
+
 
 *相关代码*
 
@@ -1373,4 +1375,4 @@ service
 
 **Nginx结合FastDFS实现文件资源HTTP访问**：
 
-![image-20230227170743226](./%E4%BB%BFb%E7%AB%99%E9%A1%B9%E7%9B%AE%E5%A4%8D%E7%9B%98%E4%B8%8E%E6%80%BB%E7%BB%93.assets/image-20230227170743226-1677488880758-4-1677489974134-10.png)
+![image-20230227170622739](https://raw.githubusercontent.com/PeiyuChen1213/JAVA_Learning_Note/master/img/image-20230227170743226-1677488880758-4-1677489974134-10-1677492161632-5.png)
