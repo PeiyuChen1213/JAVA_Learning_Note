@@ -500,3 +500,32 @@ MVVC的实现依赖于read view 和undo log 还有就是索引当中的隐藏字
 3. B再去读取数据的时候又创建新的read view 如上图所示
 4. 事务A 提交之后 事务B再去读取的时候 创建新的read view 该read view 的是m_ids是有一个52 最小事务id也是52 数据的事务id小于最小的事务id 是可见的。 可以读取
 
+#### MVCC+Next-key-lock 防止幻读问题
+
+ySQL 里除了普通查询是快照读，其他都是**当前读**，比如 update、insert、delete，这些语句执行前都会查询最新版本的数据，然后再做进一步的操作。
+
+这很好理解，假设你要 update 一个记录，另一个事务已经 delete 这条记录并且提交事务了，这样不是会产生冲突吗，所以 update 的时候肯定要知道最新的数据。
+
+另外，`select ... for update` 这种查询语句是当前读，每次执行的时候都是读取最新的数据。
+
+接下来，我们假设`select ... for update`当前读是不会加锁的（实际上是会加锁的），在做一遍实验。
+
+![img](./MySQL.assets/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5bCP5p6XY29kaW5n,size_20,color_FFFFFF,t_70,g_se,x_16.png)
+
+这时候，事务 B 插入的记录，就会被事务 A 的第二条查询语句查询到（因为是当前读），这样就会出现前后两次查询的结果集合不一样，这就出现了幻读。
+
+所以，**Innodb 引擎为了解决「可重复读」隔离级别使用「当前读」而造成的幻读问题，就引出了间隙锁**。
+
+假设，表中有一个范围 id 为（3，5）间隙锁，那么其他事务就无法插入 id = 4 这条记录了，这样就有效的防止幻读现象的发生。
+
+![img](./MySQL.assets/gap锁.drawio.png)
+
+举个具体例子，场景如下：
+
+![img](./MySQL.assets/3af285a8e70f4d4198318057eb955520.png)
+
+事务 A 执行了这面这条锁定读语句后，就在对表中的记录加上 id 范围为 (2, +∞] 的 next-key lock（next-key lock 是间隙锁+记录锁的组合）。
+
+然后，事务 B 在执行插入语句的时候，判断到插入的位置被事务 A 加了 next-key lock，于是事物 B 会生成一个插入意向锁，同时进入等待状态，直到事务 A 提交了事务。这就避免了由于事务 B 插入新记录而导致事务 A 发生幻读的现象。
+
+## 
