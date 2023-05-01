@@ -92,6 +92,8 @@
    $ make menuconfig
    ```
 
+   ![How to compile and install Linux Kernel 5.16.9](./OSAssignmet1的简要记录.assets/The-make-menuconfig-command-in-action-on-Linux-1.png)
+
 5. 配置内核
 
    编译模块 （我得虚拟机是4核心的）
