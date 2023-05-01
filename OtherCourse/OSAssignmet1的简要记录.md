@@ -82,9 +82,15 @@
 
    ![image-20230423235925666](./OSAssignmet1的简要记录.assets/image-20230423235925666.png)
 
+   安装flex和bison
+
    ![image-20230424010229917](./OSAssignmet1的简要记录.assets/image-20230424010229917.png)
 
-   安装flex和bison
+   执行这个命令 会打开一个界面，但是不用修改直接exit 即可
+
+   ```shell
+   $ make menuconfig
+   ```
 
 5. 配置内核
 
