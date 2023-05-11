@@ -6,9 +6,8 @@
 
 1. 加解密工具类的使用
 
-2. 统一封装的结果集
-
-3. ```java
+2. 统一封装的结果集 
+```java
    public class JsonResponse<T> {
    
        private String code;
@@ -68,9 +67,9 @@
            this.data = data;
        }
    }
-   ```
+```
 
-4. Json信息转换配置类 （让返回的Json数据更加规范）
+3. Json信息转换配置类 （让返回的Json数据更加规范）
 
    ```java
    @Configuration
@@ -97,7 +96,7 @@
    }
    ```
 
-5. 全局异常处理的配置
+4. 全局异常处理的配置
 
    异常处理器
 
@@ -186,6 +185,8 @@
      PRIMARY KEY (`id`)
    ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户基本信息表';
    ```
+   
+   用户表和用户信息表之间是一对一的关系
 
 #### 接口开发
 
@@ -199,7 +200,7 @@
 
    - ```java
      @RestController
-     public class UserApi {
+     public class UserController {
      
          @Autowired
          private UserService userService;
@@ -453,7 +454,7 @@ CREATE TABLE `t_following_group` (
            if(user == null){
                throw new ConditionException("关注的用户不存在！");
            }
-   //        如果有记录，先删除掉对应的记录 然后再重新添加，以达到更新的作用
+   //      如果有记录，先删除掉对应的记录 然后再重新添加，以达到更新的作用
            userFollowingDao.deleteUserFollowing(userFollowing.getUserId(), followingId);
            userFollowing.setCreateTime(new Date());
            userFollowingDao.addUserFollowing(userFollowing);
@@ -937,7 +938,7 @@ Service
                 for (UserFollowing fan : fanList) {
 //                  取到粉丝的id 拼接成一个key
                     String key = "subscribed-" + fan.getUserId();
-//                    获取到当前粉丝的动态推送列表 因为不止一个用户不止一个关注
+//                  获取到当前粉丝的动态推送列表 因为不止一个用户不止一个关注
                     String subscribedListStr = redisTemplate.opsForValue().get(key);
                     List<UserMoment> subscribedList;
                     if (StringUtil.isNullOrEmpty(subscribedListStr)) {
@@ -961,7 +962,7 @@ Service
 
 主要逻辑：
 
-1. 当消费者监听到生成者发送的弹幕之后 取出当时的弹幕
+1. 当消费者监听到生成者发送的动态之后 取出当时的动态
 2. 获取当前用户的用户粉丝 
 3. 以粉丝的userId为key 取出原来存在redis当中的消息的list然后加上
 4. 将新的动态列表转成json字符串又加入到redis当中
