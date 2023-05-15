@@ -841,7 +841,7 @@ public class RocketMQUtil {
     /**
      * 同步发送消息
      * @param producer 生产者
-     * @param msg 消费者
+     * @param msg 消息
      * @throws Exception
      */
     public static void syncSendMsg(DefaultMQProducer producer, Message msg) throws Exception{
@@ -853,7 +853,7 @@ public class RocketMQUtil {
     /**
      * 异步发送消息
      * @param producer 生产者
-     * @param msg 消费者
+     * @param msg 消息
      * @throws Exception
      */
     public static void asyncSendMsg(DefaultMQProducer producer, Message msg) throws Exception{
@@ -938,7 +938,7 @@ Service
                 for (UserFollowing fan : fanList) {
 //                  取到粉丝的id 拼接成一个key
                     String key = "subscribed-" + fan.getUserId();
-//                  获取到当前粉丝的动态推送列表 因为不止一个用户不止一个关注
+//                  获取到当前粉丝的动态推送列表 因为一个用户不止一个关注
                     String subscribedListStr = redisTemplate.opsForValue().get(key);
                     List<UserMoment> subscribedList;
                     if (StringUtil.isNullOrEmpty(subscribedListStr)) {
@@ -965,7 +965,8 @@ Service
 1. 当消费者监听到生成者发送的动态之后 取出当时的动态
 2. 获取当前用户的用户粉丝 
 3. 以粉丝的userId为key 取出原来存在redis当中的消息的list然后加上
-4. 将新的动态列表转成json字符串又加入到redis当中
+4. 将新的动态列表转成json字符串又加入到redis当中 
+5. 序列化的是用户所有的关注的动态列表也就是subscribedList （因为往往一个用户有多个关注对象，所以推送的动态肯定有可能是多条的）
 
 #### 查询用户动态
 
@@ -1378,19 +1379,666 @@ service
 
 ![image-20230227170622739](https://raw.githubusercontent.com/PeiyuChen1213/JAVA_Learning_Note/master/img/image-20230227170743226-1677488880758-4-1677489974134-10-1677492161632-5.png)
 
-#### 断点续传的原理
+#### 文件断点续传的原理
+
+**文件分片**
+
+
+
+Controller层
+
+```java
+@RestController
+public class FileController {
+
+    @Autowired
+    private FileService fileService;
+
+    /**
+     * 返回md5之后的字符串
+     * @param file
+     * @return
+     * @throws Exception
+     */
+    @PostMapping("/md5files")
+    public JsonResponse<String> getFileMD5(MultipartFile file) throws Exception {
+        String fileMD5 = fileService.getFileMD5(file);
+        return new JsonResponse<>(fileMD5);
+    }
+
+
+    /**
+     * 文件切片
+     * @param slice
+     * @param fileMd5
+     * @param sliceNo
+     * @param totalSliceNo
+     * @return
+     * @throws Exception
+     */
+    @PutMapping("/file-slices")
+    public JsonResponse<String> uploadFileBySlices(MultipartFile slice,
+                                                   String fileMd5,
+                                                   Integer sliceNo,
+                                                   Integer totalSliceNo) throws Exception {
+        String filePath = fileService.uploadFileBySlices(slice, fileMd5, sliceNo, totalSliceNo);
+        return new JsonResponse<>(filePath);
+    }
+
+}
+```
+
+service 层
+
+```Java
+@Service
+public class FileService {
+
+    @Autowired
+    private FileDao fileDao;
+
+    @Autowired
+    private FastDFSUtil fastDFSUtil;
+
+    public String uploadFileBySlices(MultipartFile slice,
+                                         String fileMD5,
+                                         Integer sliceNo,
+                                         Integer totalSliceNo) throws Exception {
+//      实现秒传功能 逻辑: 上传文件的同时会根据md5 将文件的地址也放到数据库当中去
+        File dbFileMD5 = fileDao.getFileByMD5(fileMD5);
+//      如果之前上传过相关的数据,就直接返回地址
+        if(dbFileMD5 != null){
+            return dbFileMD5.getUrl();
+        }
+        String url = fastDFSUtil.uploadFileBySlices(slice, fileMD5, sliceNo, totalSliceNo);
+        if(!StringUtil.isNullOrEmpty(url)){
+            dbFileMD5 = new File();
+            dbFileMD5.setCreateTime(new Date());
+            dbFileMD5.setMd5(fileMD5);
+            dbFileMD5.setUrl(url);
+            dbFileMD5.setType(fastDFSUtil.getFileType(slice));
+//            将文件路径地址传到字符串当中去
+            fileDao.addFile(dbFileMD5);
+        }
+        return url;
+    }
+```
+
+FastDFS工具类当中的相关方法
+
+```Java
+   //上传可以断点续传的文件 -- 用于第一片文件上传
+    public String uploadAppenderFile(MultipartFile file) throws Exception {
+        String fileType = this.getFileType(file);
+        StorePath storePath = appendFileStorageClient.uploadAppenderFile(DEFAULT_GROUP, file.getInputStream(), file.getSize(), fileType);
+        return storePath.getPath();
+    }
+
+    //后续的文件上传 可以使用这个方法
+    public void modifyAppenderFile(MultipartFile file, String filePath, long offset) throws Exception {
+        appendFileStorageClient.modifyFile(DEFAULT_GROUP, filePath, file.getInputStream(), file.getSize(), offset);
+    }
+
+    public String uploadFileBySlices(MultipartFile file, String fileMd5, Integer sliceNo, Integer totalSliceNo) throws Exception {
+        if (file == null || sliceNo == null || totalSliceNo == null) {
+            throw new ConditionException("参数异常！");
+        }
+        String pathKey = PATH_KEY + fileMd5;
+        String uploadedSizeKey = UPLOADED_SIZE_KEY + fileMd5;
+        String uploadedNoKey = UPLOADED_NO_KEY + fileMd5;
+//        查看当前已经上传的数据大小
+        String uploadedSizeStr = redisTemplate.opsForValue().get(uploadedSizeKey);
+        Long uploadedSize = 0L;
+        if (!StringUtil.isNullOrEmpty(uploadedSizeStr)) {
+            //查看已经上传了多少的内容
+            uploadedSize = Long.valueOf(uploadedSizeStr);
+        }
+        if (sliceNo == 1) { //上传的是第一个分片
+            String path = this.uploadAppenderFile(file);
+            if (StringUtil.isNullOrEmpty(path)) {
+                throw new ConditionException("上传失败！");
+            }
+            //记录已经上传的位置
+            redisTemplate.opsForValue().set(pathKey, path);
+            redisTemplate.opsForValue().set(uploadedNoKey, "1");
+        } else {
+            //从redis查询到该文件的pathKey
+            String filePath = redisTemplate.opsForValue().get(pathKey);
+            if (StringUtil.isNullOrEmpty(filePath)) {
+                throw new ConditionException("上传失败！");
+            }
+            //上传这个分片
+            this.modifyAppenderFile(file, filePath, uploadedSize);
+            // 更新已经上传的片数
+            redisTemplate.opsForValue().increment(uploadedNoKey);
+        }
+        // 修改历史上传分片文件大小
+        uploadedSize += file.getSize();
+        redisTemplate.opsForValue().set(uploadedSizeKey, String.valueOf(uploadedSize));
+        //如果所有分片全部上传完毕，则清空redis里面相关的key和value
+        String uploadedNoStr = redisTemplate.opsForValue().get(uploadedNoKey);
+        Integer uploadedNo = Integer.valueOf(uploadedNoStr);
+        String resultPath = "";
+        if (uploadedNo.equals(totalSliceNo)) {
+            resultPath = redisTemplate.opsForValue().get(pathKey);
+            List<String> keyList = Arrays.asList(uploadedNoKey, pathKey, uploadedSizeKey);
+//            清空redis
+            redisTemplate.delete(keyList);
+        }
+        return resultPath;
+    }
+```
+
+文件的切片的代码
+
+```java
+ public void convertFileToSlices(MultipartFile multipartFile) throws Exception {
+        String fileType = this.getFileType(multipartFile);
+        //生成临时文件，将MultipartFile转为File
+        File file = this.multipartFileToFile(multipartFile);
+        long fileLength = file.length();
+        int count = 1;
+        // 开始切片
+        for (int i = 0; i < fileLength; i += SLICE_SIZE) {
+            RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r");
+            randomAccessFile.seek(i);
+            byte[] bytes = new byte[SLICE_SIZE];
+            int len = randomAccessFile.read(bytes);
+            String path = "/Users/hat/tmpfile/" + count + "." + fileType;
+            File slice = new File(path);
+            FileOutputStream fos = new FileOutputStream(slice);
+            fos.write(bytes, 0, len);
+            fos.close();
+            randomAccessFile.close();
+            count++;
+        }
+        //删除临时文件
+        file.delete();
+    }
+```
+
+断点续传的原理介绍：
+
+1. 首先先获取文件的MD5
+2. 其次进行文件分片，将文件细分成很多小片
+3. 将分片后的文件，再逐一上传
+4. 上传的细节，将上传分片的序号保存至redis当中，每次上次的时候再加1直至全部上传
+5. 分片上传之后，将文件的MD5保存至数据库当中
 
 #### 秒传的原理
 
+秒传的逻辑十分简单，就是每次上传成功之后会将文件的md5保存到数据库当中，如果相同的文件再次上传会查询对应的数据库如果发现数据库当中有则直接发挥对应的path地址
+
+```Java
+//      实现秒传功能 逻辑: 上传文件的同时会根据md5 将文件的地址也放到数据库当中去
+        File dbFileMD5 = fileDao.getFileByMD5(fileMD5);
+//      如果之前上传过相关的数据,就直接返回地址
+        if(dbFileMD5 != null){
+            return dbFileMD5.getUrl();
+        }
+```
+
 #### 视频投稿 
+
+controller层
+
+```Java
+public class VideoController {
+    @Autowired
+    private VideoService videoService;
+
+    @Autowired
+    private UserSupport userSupport;
+
+    @Autowired
+    private ElasticSearchService elasticSearchService;
+
+    /**
+     * 视频投稿
+     */
+    @PostMapping("/videos")
+    public JsonResponse<String> addVideos(@RequestBody Video video){
+        Long userId = userSupport.getCurrentUserId();
+        video.setUserId(userId);
+        videoService.addVideos(video);
+        //在es当中同步添加一条视频数据
+        elasticSearchService.addVideo(video);
+        return JsonResponse.success();
+    }
+
+```
+
+service
+
+```Java
+
+    public void addVideo(Video video){
+        videoRepository.save(video);
+    }
+```
+
+
 
 #### 视频的瀑布流的开发（实际上就是分页查询）
 
+controller层
+
+```Java
+  /**
+     * 分页查询视频列表
+     */
+    @GetMapping("/videos")
+    public JsonResponse<PageResult<Video>> pageListVideos(Integer size, Integer no, String area){
+        PageResult<Video> result = videoService.pageListVideos(size, no ,area);
+        return new JsonResponse<>(result);
+    }
+```
+
+service层
+
+```Java
+   public PageResult<Video> pageListVideos(Integer size, Integer no, String area) {
+        if(size == null || no == null){
+            throw new ConditionException("参数异常！");
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("start", (no-1)*size);
+        params.put("limit", size);
+        params.put("area" , area);
+        List<Video> list = new ArrayList<>();
+        Integer total = videoDao.pageCountVideos(params);
+        if(total > 0){
+            list = videoDao.pageListVideos(params);
+        }
+        return new PageResult<>(total, list);
+    }
+```
+
 #### 视频播放（分片实现，比较原始现在都用VOD了）
+
+```java
+  /**
+     * 视频在线播放
+     */
+    @GetMapping("/video-slices")
+    public void viewVideoOnlineBySlices(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        String url) {
+        videoService.viewVideoOnlineBySlices(request, response, url);
+    }
+```
+
+```Java
+    public void viewVideoOnlineBySlices(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        String url) {
+        try{
+            fastDFSUtil.viewVideoOnlineBySlices(request, response, url);
+        }catch (Exception ignored){}
+    }
+
+```
+
+```Java
+   /**
+     * 视频分片在线观看
+     * @param request
+     * @param response
+     * @param path
+     * @throws Exception
+     */
+    public void viewVideoOnlineBySlices(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        String path) throws Exception {
+        FileInfo fileInfo = fastFileStorageClient.queryFileInfo(DEFAULT_GROUP, path);
+        long totalFileSize = fileInfo.getFileSize();
+//        获取访问路径
+        String url = httpFdfsStorageAddr + path;
+        Enumeration<String> headerNames = request.getHeaderNames();
+        Map<String, Object> headers = new HashMap<>();
+        while (headerNames.hasMoreElements()) {
+            String header = headerNames.nextElement();
+            headers.put(header, request.getHeader(header));
+        }
+        String rangeStr = request.getHeader("Range");
+        String[] range;
+        if (StringUtil.isNullOrEmpty(rangeStr)) {
+            rangeStr = "bytes=0-" + (totalFileSize - 1);
+        }
+        range = rangeStr.split("bytes=|-");
+        long begin = 0;
+        if (range.length >= 2) {
+            begin = Long.parseLong(range[1]);
+        }
+        long end = totalFileSize - 1;
+        if (range.length >= 3) {
+            end = Long.parseLong(range[2]);
+        }
+        long len = (end - begin) + 1;
+        String contentRange = "bytes " + begin + "-" + end + "/" + totalFileSize;
+        response.setHeader("Content-Range", contentRange);
+        response.setHeader("Accept-Ranges", "bytes");
+        response.setHeader("Content-Type", "video/mp4");
+        response.setContentLength((int) len);
+        response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+        HttpUtil.get(url, headers, response);
+    }
+```
 
 #### 视频点赞，收藏，投币，评论，详情
 
+数据库表结构
+
+```sql
+DROP TABLE IF EXISTS `t_video`;
+CREATE TABLE `t_video`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
+  `userId` bigint NOT NULL COMMENT '用户id',
+  `url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '视频链接',
+  `thumbnail` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '封面链接',
+  `title` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '视频标题',
+  `type` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '视频类型：0原创 1转载',
+  `duration` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '视频时长',
+  `area` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '所在分区：0鬼畜 1音乐 2电影',
+  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL COMMENT '视频简介',
+  `createTime` datetime NULL DEFAULT NULL COMMENT '创建时间',
+  `updateTime` datetime NULL DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 26 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视频投稿记录表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for t_video_coin
+-- ----------------------------
+DROP TABLE IF EXISTS `t_video_coin`;
+CREATE TABLE `t_video_coin`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '视频投稿id',
+  `userId` bigint NULL DEFAULT NULL COMMENT '用户id',
+  `videoId` bigint NULL DEFAULT NULL COMMENT '视频投稿id',
+  `amount` int NULL DEFAULT NULL COMMENT '投币数',
+  `createTime` datetime NULL DEFAULT NULL COMMENT '创建时间',
+  `updateTime` datetime NULL DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视频硬币表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for t_video_collection
+-- ----------------------------
+DROP TABLE IF EXISTS `t_video_collection`;
+CREATE TABLE `t_video_collection`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
+  `videoId` bigint NULL DEFAULT NULL COMMENT '视频投稿id',
+  `userId` bigint NULL DEFAULT NULL COMMENT '用户id',
+  `groupId` bigint NULL DEFAULT NULL COMMENT '收藏分组id',
+  `createTime` datetime NULL DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视频收藏记录表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for t_video_comment
+-- ----------------------------
+DROP TABLE IF EXISTS `t_video_comment`;
+CREATE TABLE `t_video_comment`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
+  `videoId` bigint NOT NULL COMMENT '视频id',
+  `userId` bigint NOT NULL COMMENT '用户id',
+  `comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '评论',
+  `replyUserId` bigint NULL DEFAULT NULL COMMENT '回复用户id',
+  `rootId` bigint NULL DEFAULT NULL COMMENT '根节点评论id',
+  `createTime` datetime NULL DEFAULT NULL COMMENT '创建时间',
+  `updateTime` datetime NULL DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 7 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视频评论表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for t_video_like
+-- ----------------------------
+DROP TABLE IF EXISTS `t_video_like`;
+CREATE TABLE `t_video_like`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
+  `userId` bigint NOT NULL COMMENT '用户id',
+  `videoId` bigint NOT NULL COMMENT '视频投稿id',
+  `createTime` datetime NULL DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视频点赞记录表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for t_video_tag
+-- ----------------------------
+DROP TABLE IF EXISTS `t_video_tag`;
+CREATE TABLE `t_video_tag`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
+  `videoId` bigint NOT NULL COMMENT '视频id',
+  `tagId` bigint NOT NULL COMMENT '标签id',
+  `createTime` datetime NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 32 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci COMMENT = '视频标签关联表' ROW_FORMAT = Dynamic;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+```
+
+点赞相关的接口
+
+```java
+/**
+     * 点赞视频
+     */
+    @PostMapping("/video-likes")
+    public JsonResponse<String> addVideoLike(@RequestParam Long videoId){
+        Long userId = userSupport.getCurrentUserId();
+        videoService.addVideoLike(videoId, userId);
+        return JsonResponse.success();
+    }
+
+    /**
+     * 取消点赞视频
+     */
+    @DeleteMapping("/video-likes")
+    public JsonResponse<String> deleteVideoLike(@RequestParam Long videoId){
+        Long userId = userSupport.getCurrentUserId();
+        videoService.deleteVideoLike(videoId, userId);
+        return JsonResponse.success();
+    }
+
+    /**
+     * 查询视频点赞数量
+     */
+    @GetMapping("/video-likes")
+    public JsonResponse<Map<String, Object>> getVideoLikes(@RequestParam Long videoId){
+        Long userId = null;
+        try{
+            userId = userSupport.getCurrentUserId();
+        }catch (Exception ignored){}
+        Map<String, Object> result = videoService.getVideoLikes(videoId, userId);
+        return new JsonResponse<>(result);
+    }
+```
+
+收藏相关的接口
+
+```Java
+
+    /**
+     * 收藏视频
+     */
+    @PostMapping("/video-collections")
+    public JsonResponse<String> addVideoCollection(@RequestBody VideoCollection videoCollection){
+        Long userId = userSupport.getCurrentUserId();
+        videoService.addVideoCollection(videoCollection, userId);
+        return JsonResponse.success();
+    }
+
+    /**
+     * 取消收藏视频
+     */
+    @DeleteMapping("/video-collections")
+    public JsonResponse<String> deleteVideoCollection(@RequestParam Long videoId){
+        Long userId = userSupport.getCurrentUserId();
+        videoService.deleteVideoCollection(videoId, userId);
+        return JsonResponse.success();
+    }
+
+    /**
+     * 查询视频收藏数量
+     */
+    @GetMapping("/video-collections")
+    public JsonResponse<Map<String, Object>> getVideoCollections(@RequestParam Long videoId){
+        Long userId = null;
+        try{
+            userId = userSupport.getCurrentUserId();
+        }catch (Exception ignored){}
+        Map<String, Object> result = videoService.getVideoCollections(videoId, userId);
+        return new JsonResponse<>(result);
+    }
+```
+
+上述都是比较简单的增删改查 没啥重要的
+
+投币相关的接口
+
+```java
+
+    /**
+     * 视频投币
+     */
+    @PostMapping("/video-coins")
+    public JsonResponse<String> addVideoCoins(@RequestBody VideoCoin videoCoin){
+        Long userId = userSupport.getCurrentUserId();
+        videoService.addVideoCoins(videoCoin, userId);
+        return JsonResponse.success();
+    }
+
+    /**
+     * 查询视频投币数量
+     */
+    @GetMapping("/video-coins")
+    public JsonResponse<Map<String, Object>> getVideoCoins(@RequestParam Long videoId){
+        Long userId = null;
+        try{
+            userId = userSupport.getCurrentUserId();
+        }catch (Exception ignored){}
+        Map<String, Object> result = videoService.getVideoCoins(videoId, userId);
+        return new JsonResponse<>(result);
+    }
+```
+
+service层
+
+```Java
+ @Transactional
+    public void addVideoCoins(VideoCoin videoCoin, Long userId) {
+        Long videoId = videoCoin.getVideoId();
+        Integer amount = videoCoin.getAmount();
+        if(videoId == null){
+            throw new ConditionException("参数异常！");
+        }
+        Video video = videoDao.getVideoById(videoId);
+        if(video == null){
+            throw new ConditionException("非法视频！");
+        }
+        //查询当前登录用户是否拥有足够的硬币
+        Integer userCoinsAmount = userCoinService.getUserCoinsAmount(userId);
+        userCoinsAmount = userCoinsAmount == null ? 0 : userCoinsAmount;
+        if(amount > userCoinsAmount){
+            throw new ConditionException("硬币数量不足！");
+        }
+        //查询当前登录用户对该视频已经投了多少硬币
+        VideoCoin dbVideoCoin = videoDao.getVideoCoinByVideoIdAndUserId(videoId, userId);
+        //新增视频投币
+        if(dbVideoCoin == null){
+            videoCoin.setUserId(userId);
+            videoCoin.setCreateTime(new Date());
+            videoDao.addVideoCoin(videoCoin);
+        }else{
+            Integer dbAmount = dbVideoCoin.getAmount();
+            dbAmount += amount;
+            //更新视频投币
+            videoCoin.setUserId(userId);
+            videoCoin.setAmount(dbAmount);
+            videoCoin.setUpdateTime(new Date());
+            videoDao.updateVideoCoin(videoCoin);
+        }
+        //更新用户当前硬币总数
+        userCoinService.updateUserCoinsAmount(userId, (userCoinsAmount-amount));
+    }
+```
+
+视频评论相关接口
+
+```java
+/**
+     * 添加视频评论
+     */
+    @PostMapping("/video-comments")
+    public JsonResponse<String> addVideoComment(@RequestBody VideoComment videoComment){
+        Long userId = userSupport.getCurrentUserId();
+        videoService.addVideoComment(videoComment, userId);
+        return JsonResponse.success();
+    }
+
+    /**
+     * 分页查询视频评论
+     */
+    @GetMapping("/video-comments")
+    public JsonResponse<PageResult<VideoComment>> pageListVideoComments(@RequestParam Integer size,
+                                                                        @RequestParam Integer no,
+                                                                        @RequestParam Long videoId){
+        PageResult<VideoComment> result = videoService.pageListVideoComments(size, no, videoId);
+        return new JsonResponse<>(result);
+    }
+
+```
+
+service层
+
+```Java
+ public PageResult<VideoComment> pageListVideoComments(Integer size, Integer no, Long videoId) {
+        Video video = videoDao.getVideoById(videoId);
+        if(video == null){
+            throw new ConditionException("非法视频！");
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("start", (no-1)*size);
+        params.put("limit", size);
+        params.put("videoId", videoId);
+        Integer total = videoDao.pageCountVideoComments(params);
+        List<VideoComment> list = new ArrayList<>();
+        if(total > 0){
+            list = videoDao.pageListVideoComments(params);
+            //批量查询二级评论
+            List<Long> parentIdList = list.stream().map(VideoComment::getId).collect(Collectors.toList());
+            List<VideoComment> childCommentList = videoDao.batchGetVideoCommentsByRootIds(parentIdList);
+            //批量查询用户信息
+            Set<Long> userIdList = list.stream().map(VideoComment::getUserId).collect(Collectors.toSet());
+            Set<Long> replyUserIdList = childCommentList.stream().map(VideoComment::getUserId).collect(Collectors.toSet());
+            Set<Long> childUserIdList = childCommentList.stream().map(VideoComment::getReplyUserId).collect(Collectors.toSet());
+            userIdList.addAll(replyUserIdList);
+            userIdList.addAll(childUserIdList);
+            List<UserInfo> userInfoList = userService.batchGetUserInfoByUserIds(userIdList);
+            Map<Long, UserInfo> userInfoMap = userInfoList.stream().collect(Collectors.toMap(UserInfo :: getUserId, userInfo -> userInfo));
+            list.forEach(comment -> {
+                Long id = comment.getId();
+                List<VideoComment> childList = new ArrayList<>();
+                childCommentList.forEach(child -> {
+                    if(id.equals(child.getRootId())){
+                        child.setUserInfo(userInfoMap.get(child.getUserId()));
+                        child.setReplyUserInfo(userInfoMap.get(child.getReplyUserId()));
+                        childList.add(child);
+                    }
+                });
+                comment.setChildList(childList);
+                comment.setUserInfo(userInfoMap.get(comment.getUserId()));
+            });
+        }
+        return new PageResult<>(total, list);
+    }
+```
+
+
+
 #### 视频的在线播放
+
+
 
 #### 弹幕系统的开发（websocket协议实现）
 
@@ -1447,5 +2095,3 @@ springboot定时任务统计每个视频的在线人数
 ### 内容推荐（使用Apache的现场的协同算法库 mhout)
 
 
-
-### 
