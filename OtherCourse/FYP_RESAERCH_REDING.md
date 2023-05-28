@@ -72,3 +72,24 @@ The authors introduce a new approach that combines relevance-based item similari
 
 
 
+## 9. Research on an improved Collaborative filtering algorithm-- taking Movie recommendation system as an example  DOI：10.13509/j.cnki.ib.2020.01.010
+
+Collaborative filtering algorithm is the most widely used algorithm in personalized recommendation system. However, with the rapid increase of the number of users and information resources, the unreliability, sparsity and timeliness of data seriously affect the recommendation quality of the recommendation system.
+
+In order to solve these problems, researchers have improved the traditional collaborative filtering algorithm, mainly focusing on the two dimensions of time and space. First of all, in space, they construct the emotional score matrix and combine it with the scoring matrix to alleviate the unreliable subjective scoring of users. By considering the user's emotional tendency, we can better understand the user's preference for items, so as to improve the accuracy of recommendation.
+
+Secondly, in terms of time, researchers introduce time weight factor to simulate users' interest transfer, in order to alleviate the problem of data sparsity and timeliness. With the passage of time, the user's interest will change, so considering the time factor can better reflect the user's current interest, thus improving the recommendation result.
+
+In addition, the combination of user interest distribution similarity and score similarity is also a method to improve the quality of recommendation. By comprehensively considering the interest distribution and scoring behavior of users, we can find similar users more accurately and provide personalized recommendations for target users.
+
+
+
+## 10. Application of improved Collaborative filtering algorithm in Movie recommendation systemDOI：10.19311/j.cnki.1672-3198.2018.17.028
+
+
+
+This study mainly discusses the application of collaborative filtering algorithm in movie recommendation system. Although collaborative filtering is one of the most extensive and successful recommendation technologies at present, it also has some problems, such as data sparsity and the change of user interest.
+
+In order to solve these problems, the researchers analyzed the project-based collaborative filtering algorithm and proposed an improved method. First of all, they introduce the common score weight function and time weight function to improve the similarity calculation and prediction score calculation method. The weight function of joint evaluation takes into account the importance of joint evaluation of movies among users in order to improve the accuracy of similarity calculation. The time weight function simulates the changes of users' interests, taking into account the users' dynamic preference for movies.
+
+Through the verification experiments on Movielens data sets, the researchers verify that the improved collaborative filtering algorithm has a significant improvement in recommendation accuracy compared with traditional methods. This means that the improved algorithm can better solve the problems such as data sparsity and the change of user interest, and provide more accurate and personalized movie recommendations.
