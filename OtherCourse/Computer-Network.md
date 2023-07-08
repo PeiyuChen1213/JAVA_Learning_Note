@@ -159,4 +159,227 @@ ARP请求是广播请求，而回复是单播回复
 
 
 
-### 
+## Netword layer
+
+### IP Addr 概述
+
+1. 在网络层当中的主要协议就是IP协议
+
+2. ip地址会分配给网络当中的每一个节点，也是为了区别不同网络的节点
+
+3. 有两种形式的IP地址
+
+   - IPV4 ：32 bit
+   - IPV6： 64 bit
+
+4. 32位的ip地址被分成四组每组八位，如果细化可以将IP地址分成两个part 一个network id 一个是host id
+
+   ![image-20230528155041206](./Computer-Network.assets/image-20230528155041206.png)
+
+### Classes of IP addr
+
+1. 总共有五种IP地址
+
+   ![image-20230528155201983](./Computer-Network.assets/image-20230528155201983.png)
+
+2. Class A
+
+   ![image-20230528155251521](./Computer-Network.assets/image-20230528155251521.png)
+
+   主要看第一组的range，range在1-126
+
+3. Class B
+
+   ![image-20230528155413261](./Computer-Network.assets/image-20230528155413261.png)
+
+   range在128-191之间
+
+4. Class C
+
+   ![image-20230528155435007](./Computer-Network.assets/image-20230528155435007.png)
+
+   range在192-223之间的
+
+5. Class D and Class E
+
+   ![image-20230528155839137](./Computer-Network.assets/image-20230528155839137.png)
+
+6. Special Addresses
+
+   ![image-20230528155926768](./Computer-Network.assets/image-20230528155926768.png)
+
+7. Public and Private IP Addresses
+
+   ![image-20230528160001568](./Computer-Network.assets/image-20230528160001568.png)
+
+### Subnet Mask
+
+子网掩码可以确定Network id和host id 的分布，哪些位是用于networdid 哪些是用于host id ，其中是1 的位代表network id 是 0的位代表 host id
+
+
+
+ip和子网掩码进行按位与的操作，则可以得到对应的network id，
+
+![image-20230528160502411](./Computer-Network.assets/image-20230528160502411.png)
+
+**Default Subnet Mask**
+
+![image-20230528160529059](./Computer-Network.assets/image-20230528160529059.png)
+
+**CIDR (Classless Interdomain Routing)**
+
+![image-20230528160813046](./Computer-Network.assets/image-20230528160813046.png)
+
+一种表示 方法，用/24表示这个子网的子网掩码是24个1 和8 个0 也就是255：255：255：0
+
+### How to Create Subnets（key）
+
+子网划分的原理
+
+核心的思路就是，从host位当中借位成network id当中的位，具体借几位和你要划分几个子网相关，比如划分两个子网就是1位，4个子网就是两位
+
+![image-20230528161158399](./Computer-Network.assets/image-20230528161158399.png)
+
+![image-20230528161208730](./Computer-Network.assets/image-20230528161208730.png)
+
+![image-20230528161219603](./Computer-Network.assets/image-20230528161219603.png)
+
+![image-20230528161242298](./Computer-Network.assets/image-20230528161242298.png)
+
+![image-20230528161303109](./Computer-Network.assets/image-20230528161303109.png)
+
+![image-20230528161446908](./Computer-Network.assets/image-20230528161446908.png)
+
+![image-20230528161457618](./Computer-Network.assets/image-20230528161457618.png)
+
+![image-20230528161634474](./Computer-Network.assets/image-20230528161634474.png)
+
+
+
+通过上述的例子，几乎已经明白是怎么划分子网的了，所以这个时候看一下不同class的ip的子网掩码表：
+
+![image-20230528161748492](./Computer-Network.assets/image-20230528161748492.png)
+
+![image-20230528161759794](./Computer-Network.assets/image-20230528161759794.png)
+
+### Internet Protocol (IP)
+
+1.  IP 在网络层进行操作 
+2.  规定了数据应该如何传递和传递到哪里 
+3. IP 使得 TCP/IP 能够在多个局域网段和多种类型的网络之间进行互联，通过路由器进行传输 
+4. IP 是一种不可靠的、无连接的协议 这意味着 IP 不能保证数据的传递，并且在传输数据之前不建立连接 
+5.  IP 依赖于 TCP 来确保数据包被传递到正确的地址。
+
+### IPv4 Packet Header Format
+
+![image-20230528194207610](./Computer-Network.assets/image-20230528194207610.png)
+
+IPv4 数据包中的字段如下所述：
+
+1. 版本（4 位）：
+   - 表示所使用的 IP 协议的版本号。
+   - 值为 "4" 表示 IPv4。
+2. 头部长度（4 位）：
+   - 指示 IP 头部的长度，以 32 位字长为单位。
+   - 如果没有选项存在，则值为 "5"。
+   - 实际的长度通过将该值乘以 4 来计算（例如，值为 5 对应头部长度为 20 字节）。
+3. 服务类型（8 位）：
+   - 也称为服务类型（Type of Service，ToS）字段。
+   - 指定数据包的服务质量和优先级。
+   - 在实际应用中很少使用，通常被忽略或设置为默认值。
+4. 总长度（16 位）：
+   - 表示 IP 数据包的总字节数，包括头部和有效载荷（数据）。
+   - 最大值为 65,535 字节（包括没有选项存在时的 20 字节头部）。
+5. 标识（Identification，16 位）：
+   - 用于将分片收集到一起以进行重组的数据包分配的标识符。
+   - 在 IP 分片和重组过程中，所有属于同一个原始数据包的片段都会共享相同的标识符。
+6. 标志（Flags，3 位）：
+   - 指示数据包是否被分片的标志位。
+   - 第一位（最左边的位）为保留位，目前未被使用，预留给未来的扩展。
+   - 第二位表示是否禁止对该数据包进行分片。当该位被设置为 1 时，表明该数据包不允许进一步分片。
+   - 第三位用于指示是否有更多的分片。当该位被设置为 1 时，表示还有更多的分片属于同一个原始数据包。
+7. 分片偏移（Fragment Offset，13 位）：
+   - 指定该分片在原始数据包中的位置。
+   - 分片偏移的值是以 8 为倍数的偏移量，用于计算分片在原始数据包中的准确位置。
+8. 生存时间（Time to Live，TTL）（8 位）：
+   - 表示数据包在网络中保留的最长时间，超过该时间后数据包将被丢弃。
+   - 也可以理解为数据包在网络中经过的最大路由器跳数。
+   - 通常被设置为 32 或 64。
+   - 每经过一个路由器，TTL 值会减少 1。
+   - 当 TTL 值减至 0 时，数据包将被丢弃并报告错误。
+9. 协议（Protocol）（8 位）：
+   - 用于标识将接收该数据包的协议类型。
+   - 例如，TCP 的协议号是 6，UDP 的协议号是 17。
+   - 通过该字段，接收端可以知道如何正确处理接收到的数据包，选择合适的协议进行处理。
+10. 头部校验和（Header Checksum，16 位）：
+
+    - 允许接收主机计算 IP 头部在传输过程中是否被损坏。
+
+    - 通过对头部字段进行校验和计算，接收端可以检查头部是否完整和未		被篡改。
+
+11. 源 IP 地址（Source IP Address，32 位）：
+
+    - 表示原始发送方（源主机）的 IP 地址。
+    - 头部中不包含中间路由器的地址，只记录原始发送方的地址。
+
+12. 目标 IP 地址（Destination IP Address，32 位）：
+
+    - 表示最终目标主机的 IP 地址。
+    - 头部中不包含中间路由器的地址，只记录最终目标主机的地址
+13. 选项（Options）：
+
+	- 选项字段用于提供可选的路由和时间相关信息。
+	- 这些选项通常是可选的，并且在大多数情况下被省略。
+	- 选项字段允许在 IP 头部中添加附加的控制信息，例如记录数据包的路由路径、请求特定的服务质量或指定数据包的时间敏感性等。
+	- 选项字段的具体格式和内容取决于所使用的选项类型，不同类型的选项可以提供不同的功能。
+
+14. 填充（Padding）：
+
+	- 如果选项字段的长度不是 32 位的整数倍，就会在选项字段的末尾添加零位，使得整个头部的长度能够成为 32 位的倍数。
+	- 这种填充操作确保 IP 头部的长度满足对齐要求，便于在网络设备上的处理和解析。
+
+### IP数据分片
+
+1. 数据字段的传输是有大小限制的，称之为MTU
+2. 所以一个 比较大的数据包需要对其进行分片来传输
+
+分片的基本流程和例子：
+
+一个数据包的总长度为3820字节，其数据部分为3800字节（使用固定
+首部），需要分为长度不超过1420字节的数据包片。因固定首部长度为20字
+节，所以每个数据包片的数据部分长度不能超过1400字节。于是分为3个数
+据包片，其数据部分的长度分别为1400、1400和1000字节。原始数据包首
+部被复制为各数据包片的首部，但必须修改有关字段的值。图5-6所示为分片
+后得出的结果（注意片偏移的数值）。
+
+![image-20230528202123876](./Computer-Network.assets/image-20230528202123876.png)
+
+offset的计算是body的长度来计算的，比如第一个就是0 第二个就是0+前一个的body/8这样
+
+每个分片的identification都是一样的
+
+### Internet Control Message Protocol (ICMP)
+
+ICMP是TCP/IP协议栈中网络层的一个协议，ICMP即Internet Control
+Message Protocol（互联网控制报文协议）的缩写，用于在IP主机、路由器
+之间传递控制消息。控制消息是指网络通不通、主机是否可达、路由是否可
+用等网络本身的消息。
+ICMP报文是在IP数据报内部被传输的，它封装在IP数据报内。ICMP报
+文通常被IP层或更高层协议（TCP或UDP）使用。一些ICMP报文把差错报文
+返回给用户进程。
+
+#### ICMP的请求和响应信息
+
+![image-20230528204511496](./Computer-Network.assets/image-20230528204511496.png)
+
+![image-20230528204526929](./Computer-Network.assets/image-20230528204526929.png)
+
+下图是ICMP的请求和响应报文类型和代码及其对应的描述
+
+![image-20230528204605840](./Computer-Network.assets/image-20230528204605840.png)
+
+![image-20230528204735499](./Computer-Network.assets/image-20230528204735499.png)
+
+**ICMP的报文是封装在IP报文中的**
+
+![image-20230528204837707](./Computer-Network.assets/image-20230528204837707.png)
